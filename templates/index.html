@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+    <title>ReviewMind AI</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='style.css') }}"
+    >
+
+</head>
+
+<body>
+
+    <div class="container">
+
+        <h1>ReviewMind AI 😎</h1>
+
+        <p class="subtitle">
+
+            AI-Powered Product Review Analyzer
+
+        </p>
+
+        <!-- Upload Form -->
+
+        <form method="POST" enctype="multipart/form-data">
+
+            <input
+                type="file"
+                name="images"
+                multiple
+                required
+            >
+
+            <br><br>
+
+            <button type="submit">
+
+                Analyze Reviews
+
+            </button>
+
+        </form>
+
+        <!-- Results -->
+
+        {% if overall_sentiment %}
+
+        <div class="result-box">
+
+            <h2>
+                Overall Sentiment:
+                {{ overall_sentiment }}
+            </h2>
+
+            <h2>
+                Confidence Score:
+                {{ confidence }}%
+            </h2>
+
+            <h2>
+                Product Rating:
+                {{ rating }}/5 ⭐
+            </h2>
+
+            <h2>
+                Recommendation:
+                {{ recommendation }}
+            </h2>
+
+            <!-- Positive Reviews -->
+
+            <div class="positive-box">
+
+                <h3>Top Positive Insights ✅</h3>
+
+                <ul>
+
+                    {% for sentence in positive_sentences[:5] %}
+
+                        <li>{{ sentence }}</li>
+
+                    {% endfor %}
+
+                </ul>
+
+            </div>
+
+            <!-- Negative Reviews -->
+
+            <div class="negative-box">
+
+                <h3>Top Negative Insights ❌</h3>
+
+                <ul>
+
+                    {% for sentence in negative_sentences[:5] %}
+
+                        <li>{{ sentence }}</li>
+
+                    {% endfor %}
+
+                </ul>
+
+            </div>
+
+        </div>
+
+        {% endif %}
+
+    </div>
+
+</body>
+
+</html>
