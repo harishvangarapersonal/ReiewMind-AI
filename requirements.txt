@@ -1,0 +1,10 @@
+flask
+gunicorn
+transformers
+torch
+easyocr
+opencv-python-headless
+numpy
+pandas
+nltk
+Pillow

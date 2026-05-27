@@ -43,9 +43,7 @@ os.makedirs(
 # =========================================
 
 reader = easyocr.Reader(
-
     ['en'],
-
     gpu=False
 )
 
@@ -54,11 +52,8 @@ reader = easyocr.Reader(
 # =========================================
 
 sentiment_pipeline = pipeline(
-
     "sentiment-analysis",
-
-    model=
-    "distilbert-base-uncased-finetuned-sst-2-english"
+    model="distilbert-base-uncased-finetuned-sst-2-english"
 )
 
 # =========================================
@@ -81,6 +76,8 @@ def home():
 
     negative_sentences = []
 
+    extracted_reviews = ""
+
     if request.method == "POST":
 
         files = request.files.getlist(
@@ -95,28 +92,28 @@ def home():
 
         for file in files:
 
-            # Skip empty uploads
             if file.filename == "":
 
                 continue
 
             filepath = os.path.join(
-
                 app.config["UPLOAD_FOLDER"],
-
                 file.filename
             )
 
-            # Save uploaded image
-            file.save(filepath)
+            try:
+
+                file.save(filepath)
+
+            except:
+
+                continue
 
             # OCR
             try:
 
                 result = reader.readtext(
-
                     filepath,
-
                     detail=0
                 )
 
@@ -135,20 +132,14 @@ def home():
         if len(all_reviews) == 0:
 
             return render_template(
-
                 "index.html",
-
                 overall_sentiment="No readable text found",
-
                 confidence=0,
-
                 recommendation="Upload clearer screenshots",
-
                 rating=0,
-
                 positive_sentences=[],
-
-                negative_sentences=[]
+                negative_sentences=[],
+                extracted_reviews=""
             )
 
         # ====================================
@@ -159,31 +150,44 @@ def home():
             all_reviews
         )
 
+        extracted_reviews = combined_reviews
+
         # ====================================
         # OVERALL SENTIMENT
         # ====================================
 
-        sentiment = sentiment_pipeline(
+        try:
 
-            combined_reviews[:512]
-        )
+            sentiment = sentiment_pipeline(
+                combined_reviews[:512]
+            )
 
-        overall_sentiment = sentiment[0]['label']
+            overall_sentiment = sentiment[0]['label']
 
-        confidence = round(
+            confidence = round(
+                sentiment[0]['score'] * 100,
+                2
+            )
 
-            sentiment[0]['score'] * 100,
+        except:
 
-            2
-        )
+            overall_sentiment = "UNKNOWN"
+
+            confidence = 0
 
         # ====================================
         # SPLIT INTO SENTENCES
         # ====================================
 
-        sentences = sent_tokenize(
-            combined_reviews
-        )
+        try:
+
+            sentences = sent_tokenize(
+                combined_reviews
+            )
+
+        except:
+
+            sentences = combined_reviews.split(".")
 
         # ====================================
         # ANALYZE EACH SENTENCE
@@ -193,7 +197,6 @@ def home():
 
             sentence = sentence.strip()
 
-            # Ignore tiny sentences
             if len(sentence.split()) < 4:
 
                 continue
@@ -201,7 +204,6 @@ def home():
             try:
 
                 result = sentiment_pipeline(
-
                     sentence[:512]
                 )
 
@@ -247,14 +249,11 @@ def home():
         else:
 
             positivity_ratio = (
-
                 positive_count / total
             )
 
             rating = round(
-
                 positivity_ratio * 5,
-
                 1
             )
 
@@ -262,7 +261,7 @@ def home():
         # FINAL RECOMMENDATION
         # ====================================
 
-        if positive_count > negative_count:
+        if positive_count >= negative_count:
 
             recommendation = (
                 "Worth Buying ✅"
@@ -275,20 +274,14 @@ def home():
             )
 
     return render_template(
-
         "index.html",
-
         overall_sentiment=overall_sentiment,
-
         confidence=confidence,
-
         recommendation=recommendation,
-
         rating=rating,
-
         positive_sentences=positive_sentences,
-
-        negative_sentences=negative_sentences
+        negative_sentences=negative_sentences,
+        extracted_reviews=extracted_reviews
     )
 
 # =========================================
@@ -297,4 +290,11 @@ def home():
 
 if __name__ == "__main__":
 
-    app.run(debug=True)
+    port = int(
+        os.environ.get("PORT", 5000)
+    )
+
+    app.run(
+        host="0.0.0.0",
+        port=port
+    )
