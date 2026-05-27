@@ -1,22 +1,21 @@
 from flask import Flask, render_template, request
+import os
+import re
+import nltk
+import pytesseract
 
-import easyocr
-
+from PIL import Image
+from collections import Counter
 from transformers import pipeline
 
-import nltk
-
-from nltk.tokenize import sent_tokenize
-
-import os
-
 # =========================================
-# DOWNLOAD NLTK DATA
+# DOWNLOAD NLTK
 # =========================================
 
 nltk.download('punkt')
-
 nltk.download('punkt_tab')
+
+from nltk.tokenize import sent_tokenize
 
 # =========================================
 # FLASK APP
@@ -24,37 +23,57 @@ nltk.download('punkt_tab')
 
 app = Flask(__name__)
 
-# =========================================
-# UPLOAD FOLDER
-# =========================================
-
 UPLOAD_FOLDER = "uploads"
 
-app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-
-# Create uploads folder automatically
-os.makedirs(
-    UPLOAD_FOLDER,
-    exist_ok=True
-)
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
 
 # =========================================
-# OCR MODEL
-# =========================================
-
-reader = easyocr.Reader(
-    ['en'],
-    gpu=False
-)
-
-# =========================================
-# SENTIMENT MODEL
+# LOAD SENTIMENT MODEL
 # =========================================
 
 sentiment_pipeline = pipeline(
-    "sentiment-analysis",
-    model="distilbert-base-uncased-finetuned-sst-2-english"
+    "sentiment-analysis"
 )
+
+# =========================================
+# POSITIVE / NEGATIVE WORDS
+# =========================================
+
+positive_keywords = [
+
+    "good",
+    "great",
+    "excellent",
+    "awesome",
+    "amazing",
+    "comfortable",
+    "premium",
+    "fast",
+    "smooth",
+    "clear",
+    "best",
+    "love",
+    "perfect"
+
+]
+
+negative_keywords = [
+
+    "bad",
+    "worst",
+    "issue",
+    "problem",
+    "poor",
+    "disappointed",
+    "heating",
+    "lag",
+    "slow",
+    "waste",
+    "broken",
+    "damage"
+
+]
 
 # =========================================
 # HOME ROUTE
@@ -65,223 +84,164 @@ sentiment_pipeline = pipeline(
 def home():
 
     overall_sentiment = ""
-
     confidence = ""
-
     recommendation = ""
 
-    rating = ""
-
     positive_sentences = []
-
     negative_sentences = []
 
-    extracted_reviews = ""
+    pros = []
+    cons = []
 
     if request.method == "POST":
 
-        files = request.files.getlist(
-            "images"
-        )
+        files = request.files.getlist("images")
 
-        all_reviews = []
+        combined_reviews = ""
 
-        # ====================================
+        # =========================================
         # OCR FROM MULTIPLE IMAGES
-        # ====================================
+        # =========================================
 
         for file in files:
 
-            if file.filename == "":
+            if file.filename != "":
 
-                continue
-
-            filepath = os.path.join(
-                app.config["UPLOAD_FOLDER"],
-                file.filename
-            )
-
-            try:
+                filepath = os.path.join(
+                    UPLOAD_FOLDER,
+                    file.filename
+                )
 
                 file.save(filepath)
 
-            except:
+                image = Image.open(filepath)
 
-                continue
-
-            # OCR
-            try:
-
-                result = reader.readtext(
-                    filepath,
-                    detail=0
+                extracted_text = pytesseract.image_to_string(
+                    image
                 )
 
-            except:
+                combined_reviews += extracted_text + " "
 
-                continue
+        # =========================================
+        # CLEAN TEXT
+        # =========================================
 
-            text = " ".join(result)
-
-            all_reviews.append(text)
-
-        # ====================================
-        # HANDLE EMPTY REVIEWS
-        # ====================================
-
-        if len(all_reviews) == 0:
-
-            return render_template(
-                "index.html",
-                overall_sentiment="No readable text found",
-                confidence=0,
-                recommendation="Upload clearer screenshots",
-                rating=0,
-                positive_sentences=[],
-                negative_sentences=[],
-                extracted_reviews=""
-            )
-
-        # ====================================
-        # COMBINE REVIEWS
-        # ====================================
-
-        combined_reviews = " ".join(
-            all_reviews
+        combined_reviews = re.sub(
+            r'\s+',
+            ' ',
+            combined_reviews
         )
 
-        extracted_reviews = combined_reviews
-
-        # ====================================
+        # =========================================
         # OVERALL SENTIMENT
-        # ====================================
+        # =========================================
 
-        try:
+        result = sentiment_pipeline(
+            combined_reviews[:512]
+        )
 
-            sentiment = sentiment_pipeline(
-                combined_reviews[:512]
-            )
+        overall_sentiment = result[0]['label']
 
-            overall_sentiment = sentiment[0]['label']
+        confidence = round(
+            result[0]['score'] * 100,
+            2
+        )
 
-            confidence = round(
-                sentiment[0]['score'] * 100,
-                2
-            )
+        # =========================================
+        # SENTENCE ANALYSIS
+        # =========================================
 
-        except:
-
-            overall_sentiment = "UNKNOWN"
-
-            confidence = 0
-
-        # ====================================
-        # SPLIT INTO SENTENCES
-        # ====================================
-
-        try:
-
-            sentences = sent_tokenize(
-                combined_reviews
-            )
-
-        except:
-
-            sentences = combined_reviews.split(".")
-
-        # ====================================
-        # ANALYZE EACH SENTENCE
-        # ====================================
+        sentences = sent_tokenize(
+            combined_reviews
+        )
 
         for sentence in sentences:
 
-            sentence = sentence.strip()
-
-            if len(sentence.split()) < 4:
-
-                continue
-
             try:
 
-                result = sentiment_pipeline(
+                analysis = sentiment_pipeline(
                     sentence[:512]
                 )
 
+                label = analysis[0]['label']
+
+                if label == "POSITIVE":
+
+                    positive_sentences.append(
+                        sentence
+                    )
+
+                else:
+
+                    negative_sentences.append(
+                        sentence
+                    )
+
             except:
+                pass
 
-                continue
+        # =========================================
+        # EXTRACT PROS
+        # =========================================
 
-            label = result[0]['label']
-
-            if label == "POSITIVE":
-
-                positive_sentences.append(
-                    sentence
-                )
-
-            else:
-
-                negative_sentences.append(
-                    sentence
-                )
-
-        # ====================================
-        # PRODUCT RATING
-        # ====================================
-
-        positive_count = len(
+        positive_text = " ".join(
             positive_sentences
-        )
+        ).lower()
 
-        negative_count = len(
+        for word in positive_keywords:
+
+            if word in positive_text:
+
+                pros.append(word)
+
+        # =========================================
+        # EXTRACT CONS
+        # =========================================
+
+        negative_text = " ".join(
             negative_sentences
-        )
+        ).lower()
 
-        total = (
-            positive_count +
-            negative_count
-        )
+        for word in negative_keywords:
 
-        if total == 0:
+            if word in negative_text:
 
-            rating = 3.0
+                cons.append(word)
 
-        else:
-
-            positivity_ratio = (
-                positive_count / total
-            )
-
-            rating = round(
-                positivity_ratio * 5,
-                1
-            )
-
-        # ====================================
+        # =========================================
         # FINAL RECOMMENDATION
-        # ====================================
+        # =========================================
 
-        if positive_count >= negative_count:
+        if overall_sentiment == "POSITIVE":
 
-            recommendation = (
-                "Worth Buying ✅"
-            )
+            recommendation = "Worth Buying ✅"
 
         else:
 
-            recommendation = (
-                "Not Recommended ❌"
-            )
+            recommendation = "Not Recommended ❌"
+
+    # =========================================
+    # RETURN RESULT
+    # =========================================
 
     return render_template(
+
         "index.html",
+
         overall_sentiment=overall_sentiment,
+
         confidence=confidence,
+
         recommendation=recommendation,
-        rating=rating,
-        positive_sentences=positive_sentences,
-        negative_sentences=negative_sentences,
-        extracted_reviews=extracted_reviews
+
+        pros=pros,
+
+        cons=cons,
+
+        positive_sentences=positive_sentences[:5],
+
+        negative_sentences=negative_sentences[:5]
+
     )
 
 # =========================================
